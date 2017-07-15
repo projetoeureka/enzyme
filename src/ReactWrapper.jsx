@@ -30,6 +30,7 @@ import {
   typeOfNode,
   displayNameOfNode,
   ITERATOR_SYMBOL,
+  propFromEvent,
 } from './Utils';
 import {
   debugInsts,
@@ -67,23 +68,10 @@ function filterWhereUnwrapped(wrapper, predicate) {
 class ReactWrapper {
 
   constructor(nodes, root, options = {}) {
-    if (!global.window && !global.document) {
-      throw new Error(
-        'It looks like you called `mount()` without a global document being loaded.',
-      );
-    }
-
     if (!root) {
-      const ReactWrapperComponent = createWrapperComponent(nodes, options);
-      this.component = renderWithOptions(
-        <ReactWrapperComponent
-          Component={nodes.type}
-          props={nodes.props}
-          context={options.context}
-        />,
-      options);
+      this.component = require('react-test-renderer').create(nodes);
       this.root = this;
-      this.node = this.component.getWrappedComponent();
+      this.node = this.component.getInstance();
       this.nodes = [this.node];
       this.length = 1;
     } else {
@@ -192,7 +180,7 @@ class ReactWrapper {
       throw new Error('ReactWrapper::update() can only be called on the root');
     }
     this.single('update', () => {
-      this.component.forceUpdate();
+      this.instance().forceUpdate();
     });
     return this;
   }
@@ -240,14 +228,15 @@ class ReactWrapper {
    * NOTE: can only be called on a wrapper instance that is also the root instance.
    *
    * @param {Object} props object
-   * @param {Function} cb - callback function
    * @returns {ReactWrapper}
    */
-  setProps(props, callback = undefined) {
+  setProps(props) {
+    props = { ...this.props(), ...props };
     if (this.root !== this) {
       throw new Error('ReactWrapper::setProps() can only be called on the root');
     }
-    this.component.setChildProps(props, callback);
+    this.instance().componentWillReceiveProps(props, this.component.props);
+    this.instance().props = props;
     return this;
   }
 
@@ -487,7 +476,17 @@ class ReactWrapper {
    * @returns {String}
    */
   text() {
-    return this.single('text', n => findDOMNode(n).textContent);
+    const joinIfArray = val => Array.isArray(val) ? val.join('') : val;
+
+    if (this.type() === 'Text') {
+      return joinIfArray(this.props().children);
+    }
+
+    return (
+      treeFilter(this.getNode(), n => n && n.type === 'Text')
+        .map(n => joinIfArray(n.props.children))
+        .join('')
+    );
   }
 
   /**
@@ -525,17 +524,61 @@ class ReactWrapper {
    * @param {Object} mock (optional)
    * @returns {ReactWrapper}
    */
-  simulate(event, mock = {}) {
-    this.single('simulate', (n) => {
-      const mappedEvent = mapNativeEventNames(event);
-      const eventFn = Simulate[mappedEvent];
-      if (!eventFn) {
+  simulate(event, mock = {}, irreducible) {
+    if (this.length > 1 && !irreducible) {
+      return this._reduceToClickableNodes(event).simulate(event, mock, true);
+    }
+
+    this._invokeSimulateHandler(event);
+    return this;
+  }
+
+  /**
+   * Same as `simulate`, but if the event handler is async it awaits it.
+   *
+   * This is a geekie extension and useful for debugging, but tests ideally shouldn't
+   * rely on this as it could prevent us from using a regular build from enzyme
+   */
+  async geekie_simulateAsync(event, mock = {}, irreducible) {
+    if (this.length > 1 && !irreducible) {
+      await this._reduceToClickableNodes(event).simulateAsync(event, mock, true);
+    } else {
+      await this._invokeSimulateHandler(event);
+    }
+  }
+
+  _invokeSimulateHandler(event) {
+    return this.single('simulate', (n) => {
+      let handler = this.prop(propFromEvent(event));
+      if (!handler && event === 'click') {
+        handler = this.prop(propFromEvent('press'));
+      }
+      if (!handler) {
         throw new TypeError(`ReactWrapper::simulate() event '${event}' does not exist`);
       }
-
-      eventFn(findDOMNode(n), mock);
+      return handler();
     });
-    return this;
+  }
+
+  _reduceToClickableNodes(event) {
+    const hasEventHandler = node => {
+      let handler = propsOfNode(node)[propFromEvent(event)];
+      if (!handler && event === 'click') {
+        handler = propsOfNode(node)[propFromEvent('press')];
+      }
+      return !!handler;
+    }
+
+    let nodes = this.nodes.filter(hasEventHandler);
+    if (nodes.length <= 1) {
+      return this.wrap(nodes);
+    }
+
+    // If a node is parent of another node within `nodes`, leave only the leaf components
+    nodes = nodes.filter(node => {
+      return treeFilter(node, n => n !== node && nodes.indexOf(n) >= 0).length == 0
+    });
+    return this.wrap(nodes);
   }
 
   /**

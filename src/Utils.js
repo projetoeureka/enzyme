@@ -55,6 +55,7 @@ export function propsOfNode(node) {
 }
 
 export function typeOfNode(node) {
+  if (node._reactInternalInstance) return node._reactInternalInstance.type.name;
   return node ? node.type : null;
 }
 
@@ -64,6 +65,7 @@ export function getNode(node) {
 
 export function nodeHasType(node, type) {
   if (!type || !node) return false;
+  if (node._reactInternalInstance) return nodeHasType(node._reactInternalInstance, type);
   if (!node.type) return false;
   if (typeof node.type === 'string') return node.type === type;
   return (typeof node.type === 'function' ?

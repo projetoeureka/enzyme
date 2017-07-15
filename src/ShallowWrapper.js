@@ -193,7 +193,7 @@ class ShallowWrapper {
     if (this.root !== this) {
       throw new Error('ShallowWrapper::instance() can only be called on the root');
     }
-    return this.renderer._instance ? this.renderer._instance._instance : null;
+    return this.renderer.getMountedInstance();
   }
 
   /**
@@ -617,7 +617,10 @@ class ShallowWrapper {
    * @returns {ShallowWrapper}
    */
   simulate(event, ...args) {
-    const handler = this.prop(propFromEvent(event));
+    let handler = this.prop(propFromEvent(event));
+    if (!handler && event === 'click') {
+      handler = this.prop(propFromEvent('press'));
+    }
     if (handler) {
       withSetStateAllowed(() => {
         // TODO(lmr): create/use synthetic events
@@ -627,6 +630,8 @@ class ShallowWrapper {
         });
         this.root.update();
       });
+    } else {
+      throw new TypeError(`ShallowWrapper::simulate() event '${event}' does not exist`);
     }
     return this;
   }

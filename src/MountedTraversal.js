@@ -1,6 +1,8 @@
 import isEmpty from 'lodash/isEmpty';
 import values from 'object.values';
 import isSubset from 'is-subset';
+import { findAllInRenderedTree, isCompositeComponent } from 'react-dom/test-utils';
+
 import {
   internalInstance,
   nodeEqual,
@@ -17,7 +19,6 @@ import {
 } from './Utils';
 import {
   isDOMComponent,
-  isCompositeComponent,
   isCompositeComponentWithType,
   isElement,
   findDOMNode,
@@ -25,21 +26,6 @@ import {
 import { REACT013 } from './version';
 
 export function getNode(inst) {
-  if (!inst || inst._store || typeof inst === 'string') {
-    return inst;
-  }
-  if (inst._currentElement) {
-    return inst._currentElement;
-  }
-  if (internalInstance(inst)) {
-    return internalInstance(inst)._currentElement;
-  }
-  if (inst._reactInternalInstance) {
-    return inst._reactInternalInstance._currentElement;
-  }
-  if (inst._reactInternalComponent) {
-    return inst._reactInternalComponent._currentElement;
-  }
   return inst;
 }
 
@@ -97,9 +83,11 @@ export function instHasType(inst, type) {
 }
 
 export function instHasProperty(inst, propKey, stringifiedPropValue) {
-  if (!isDOMComponent(inst)) return false;
-
   const node = getNode(inst);
+
+  if (!node) {
+    return false;
+  }
 
   return nodeHasProperty(node, propKey, stringifiedPropValue);
 }
@@ -113,48 +101,7 @@ export function renderedChildrenOfInst(inst) {
 
 // called with a private instance
 export function childrenOfInstInternal(inst) {
-  if (!inst) {
-    return [];
-  }
-  if (!inst.getPublicInstance) {
-    const internal = internalInstance(inst);
-    return childrenOfInstInternal(internal);
-  }
-
-  const publicInst = inst.getPublicInstance();
-  const currentElement = inst._currentElement;
-  if (isDOMComponent(publicInst)) {
-    const renderedChildren = renderedChildrenOfInst(inst);
-    return values(renderedChildren || {}).filter((node) => {
-      if (REACT013 && !node.getPublicInstance) {
-        return false;
-      }
-      if (typeof node._stringText !== 'undefined') {
-        return false;
-      }
-      return true;
-    }).map((node) => {
-      if (!REACT013 && typeof node._currentElement.type === 'function') {
-        return node._instance;
-      }
-      if (typeof node._stringText === 'string') {
-        return node;
-      }
-      return node.getPublicInstance();
-    });
-  } else if (
-    !REACT013 &&
-    isElement(currentElement) &&
-    typeof currentElement.type === 'function'
-  ) {
-    return childrenOfInstInternal(inst._renderedComponent);
-  } else if (
-    REACT013 &&
-    isCompositeComponent(publicInst)
-  ) {
-    return childrenOfInstInternal(inst._renderedComponent);
-  }
-  return [];
+  throw new Error("I have no idea how to implement this on a Fiber stack!");
 }
 
 export function internalInstanceOrComponent(node) {
@@ -176,56 +123,16 @@ export function childrenOfInst(node) {
 // called with a "public instance" instead, the function will call itself with the
 // internal instance and return the proper result.
 function findAllInRenderedTreeInternal(inst, test) {
-  if (!inst) {
-    return [];
-  }
-
-  if (!inst.getPublicInstance) {
-    const internal = internalInstance(inst);
-    return findAllInRenderedTreeInternal(internal, test);
-  }
-  const publicInst = inst.getPublicInstance() || inst._instance;
-  let ret = test(publicInst) ? [publicInst] : [];
-  const currentElement = inst._currentElement;
-  if (isDOMComponent(publicInst)) {
-    const renderedChildren = renderedChildrenOfInst(inst);
-    values(renderedChildren || {}).filter((node) => {
-      if (REACT013 && !node.getPublicInstance) {
-        return false;
-      }
-      return true;
-    }).forEach((node) => {
-      ret = ret.concat(findAllInRenderedTreeInternal(node, test));
-    });
-  } else if (
-    !REACT013 &&
-    isElement(currentElement) &&
-    typeof currentElement.type === 'function'
-  ) {
-    ret = ret.concat(
-      findAllInRenderedTreeInternal(
-        inst._renderedComponent,
-        test,
-      ),
-    );
-  } else if (
-    REACT013 &&
-    isCompositeComponent(publicInst)
-  ) {
-    ret = ret.concat(
-      findAllInRenderedTreeInternal(
-        inst._renderedComponent,
-        test,
-      ),
-    );
-  }
-  return ret;
+  return findAllInRenderedTree(inst, test);
 }
 
 // This function could be called with a number of different things technically, so we need to
 // pass the *right* thing to our internal helper.
 export function treeFilter(node, test) {
-  return findAllInRenderedTreeInternal(internalInstanceOrComponent(node), test);
+  if (!node || !node._reactInternalInstance) {
+    return [];
+  }
+  return findAllInRenderedTree(node, n => n && test(n));
 }
 
 function pathFilter(path, fn) {

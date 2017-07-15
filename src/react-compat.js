@@ -140,6 +140,22 @@ if (REACT013) {
     const originalRenderOutput = renderer.getRenderOutput;
     let isDOM = false;
     let cachedNode;
+
+    const updater = renderer._updater;
+    // it seems the Updater that ships with TestUtils does not fire the setState callback
+    // so we fix it on our side :-P
+    updater.enqueueSetState = (function(original) {
+      return function enqueueSetState(publicInstance, partialState, callback, callerName) {
+        const result = original(publicInstance, partialState, callback, callerName);
+
+        if (callback) {
+          callback();
+        }
+
+        return result;
+      }
+    })(updater.enqueueSetState.bind(updater));
+
     return Object.assign(renderer, {
       render(node, context) {
         /* eslint consistent-return: 0 */
