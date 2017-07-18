@@ -26,20 +26,10 @@ export default function createWrapperComponent(node, options = {}) {
       this.setState({ props }, callback);
     }
     getInstance() {
-      const component = this._reactInternalInstance._renderedComponent;
-      const inst = component.getPublicInstance();
-      if (inst === null) {
-        return component._instance;
-      }
-      return inst;
+      return this._reactInternalInstance.child.stateNode;
     }
     getWrappedComponent() {
-      const component = this._reactInternalInstance._renderedComponent;
-      const inst = component.getPublicInstance();
-      if (inst === null) {
-        return component._instance;
-      }
-      return inst;
+      return this._reactInternalInstance.child.stateNode;
     }
     setChildContext(context) {
       return new Promise(resolve => this.setState({ context }, resolve));

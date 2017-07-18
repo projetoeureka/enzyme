@@ -69,9 +69,16 @@ class ReactWrapper {
 
   constructor(nodes, root, options = {}) {
     if (!root) {
-      this.component = require('react-test-renderer').create(nodes);
+      const ReactWrapperComponent = createWrapperComponent(nodes, options);
+      this.component = require('react-test-renderer').create(
+        <ReactWrapperComponent
+          Component={nodes.type}
+          props={nodes.props}
+          context={options.context}
+        />
+      ).getInstance();
       this.root = this;
-      this.node = this.component.getInstance();
+      this.node = this.component.getWrappedComponent();
       this.nodes = [this.node];
       this.length = 1;
     } else {
